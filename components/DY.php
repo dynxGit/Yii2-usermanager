@@ -1,8 +1,13 @@
 <?php
-namespace dynxgit\dynx\components;
+
+namespace dynx\components;
+
 use Yii;
-class DY{
-    public static function UM(){
+
+class DY
+{
+    public static function UM()
+    {
         return Yii::$app->getModule('dynx');
     }
 }
