@@ -30,7 +30,7 @@ class M241010230634UserAddSua extends Migration
 			$user = new User();
 			$user->scenario = 'create';
 			$user->status = User::STATUS_PENDING;
-			$user->password = "Nee8tahH";
+			$user->password = "";
 			$user->encryptPassword("password", []);
 			$user->roles = ['SUA'];
 			$user->name = 'SUA';
