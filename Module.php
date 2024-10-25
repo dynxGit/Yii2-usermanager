@@ -1,4 +1,5 @@
 <?php
+
 /**
  * YII2 usermanager 
  * ----------
@@ -8,8 +9,6 @@
  * András Szincsák, Győr Hungary
  * MIT License
  * https://github.com/dynxGit/Yii2-usermanager
- * 
- * Version Initial
  */
 
 
@@ -25,6 +24,7 @@ use yii\web\GroupUrlRule;
 use yii\web\UserEvent;
 use yii\helpers\ArrayHelper;
 use dynx\models\User;
+use dynx\assets\DynxAsset;
 
 /**
  * user module definition class
@@ -34,16 +34,34 @@ class Module extends YiiModule implements BootstrapInterface
     /**
      * Details of te setting is written in config/config.php 
      */
-    public $SUAemail = null; 
+    public $SUAemail = null;
+    public $senderName = "";
     public $mailOptions = [];
-    public $attempt = 3;
-    public $attemptTimeout = 10;
+    public $attempt = 5;
+    public $attemptTimeout = 1 * 60; // 1 minutes
     public $tokenExpired = 3600; // 1 hour
     public $pinFormat = "3C-4N";
-    public $pinCss=[];
+    public $pinCss = [];
     public $loginInput = "email";
+    /**
+     * Password validator params
+     *
+     * @var array
+     */
+    public $passwordValidator = [ //TODO set defaults!
+        /*Minimum length of password*/
+        "length" => 6,
+        /* Uppercase character*/
+        "upper" => 1,
+        /* Numeric character*/
+        "number" => 1,
+        /* symbol character*/
+        "symbol" => 0
+    ];
     public $tryout = 30; //days
     public $config = [];
+
+    public $controllerNamespace = 'dynx\controllers';
 
 
     /**
@@ -51,11 +69,12 @@ class Module extends YiiModule implements BootstrapInterface
      */
     public function init()
     {
-           if (! Yii::$app->has('authManager')) {
+        if (! Yii::$app->has('authManager')) {
             throw new InvalidConfigException('$app::authManager is not configured.');
         }
         parent::init();
         Yii::configure($this, require __DIR__ . '/config/config.php');
+        DynxAsset::register(Yii::$app->view);
 
         if (!isset(Yii::$app->i18n->translations['dynx/*'])) {
             Yii::$app->i18n->translations['dynx/*'] = [
@@ -64,6 +83,9 @@ class Module extends YiiModule implements BootstrapInterface
                 'basePath' => '@dynx/messages/',
                 'fileMap' => [
                     'dynx/ar' => 'models.php',
+                    'dynx/form' => 'forms.php',
+                    'dynx/email' => 'emails.php',
+                    'dynx/views' => 'views.php',
 
                 ],
             ];
@@ -93,6 +115,20 @@ class Module extends YiiModule implements BootstrapInterface
     public function bootstrap($app)
     {
         if ($app instanceof WebApplication) {
+          
+            /*
+            $rules = new GroupUrlRule([
+                'prefix' => $this->id,
+                'rules' => [
+                    '<a:(confirm|recover)>/<token:[A-Za-z0-9_-]+>' => 'default/<a>',
+                    '<a:[\w\-]+>/<id:\d+>' => 'default/<a>',
+                    '<c:[\w\-]+>/<a:[\w\-]+>/<id:[\w\-]+>' => '<c>/<a>',
+                    '<a:[\w\-]+>' => 'default/<a>',
+                    'user/<a:[\w\-]+>' => 'default/<a>',
+                ]
+            ]);
+            $app->getUrlManager()->addRules([$rules], false);
+*/
             $app->on($app::EVENT_BEFORE_ACTION, [$this, 'beforeAction']);
         } else {
             /* @var $app ConsoleApplication */
@@ -131,37 +167,9 @@ class Module extends YiiModule implements BootstrapInterface
             $lang = Yii::$app->user->identity->lang;
         if ($lang)
             Yii::$app->language = $lang;
+        return parent::beforeAction($event);
     }
-    /**
-     * Check how much attempts user has been made in X seconds
-     *
-     * @return bool
-     */
-    public function attemptValidation()
-    {
-        $lastAttempt = Yii::$app->session->get("dy_attempt_last");
 
-        if ($lastAttempt) {
-            $attempts = Yii::$app->session->get("dy_attempt_count", 0);
-
-            Yii::$app->session->set("dy_attempt_count", ++$attempts);
-            if (($lastAttempt + $this->attemptTimeout) < time()) {
-                Yii::$app->session->set("dy_attempt_last", time());
-                Yii::$app->session->set("dy_attempt_count", 1);
-
-                return true;
-            } elseif ($attempts > $this->attempts) {
-                return false;
-            }
-
-            return true;
-        }
-
-        Yii::$app->session->set("dy_attempt_last", time());
-        Yii::$app->session->set("dy_attempt_count", 1);
-
-        return true;
-    }
 
     public function __get($name)
     {
@@ -172,4 +180,3 @@ class Module extends YiiModule implements BootstrapInterface
         return parent::__get($name);
     }
 }
-

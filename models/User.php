@@ -14,15 +14,15 @@
 namespace dynx\models;
 
 use Yii;
-use yii\base\InvalidCallException;
+
+use yii\db\Expression;
 use yii\base\NotSupportedException;
 use yii\behaviors\TimestampBehavior;
-use yii\db\ActiveRecord;
-use yii\db\Expression;
-use yii\web\IdentityInterface;
 use yii\helpers\ArrayHelper;
+use yii\web\IdentityInterface;
 use dynx\Module;
 use dynx\components\DyActiveRecord;
+use dynx\models\behaviors\UserEmailBehavior;
 use dynx\models\behaviors\UserStatusBehavior;
 use dynx\models\behaviors\UserPinBehavior;
 
@@ -62,7 +62,6 @@ class User extends DyActiveRecord implements IdentityInterface
 
 
     public $password;
-    public $flags = [];
     public $roles = []; // role *names*
 
     /**
@@ -83,8 +82,8 @@ class User extends DyActiveRecord implements IdentityInterface
                 'class' => TimestampBehavior::class,
                 'value' => new Expression('NOW()'),
             ],
-            'status'=>UserStatusBehavior::class,
-            'pin'=>UserPinBehavior::class
+            'status' => UserStatusBehavior::class,
+            'pin' => UserPinBehavior::class
         ];
     }
 
@@ -95,36 +94,36 @@ class User extends DyActiveRecord implements IdentityInterface
     {
         $mod = Module::getInstance();
 
-        $r = ArrayHelper::merge([
-            ['name', 'trim'],
-            ['name', 'required'],
-            ['name', 'string', 'min' => 2, 'max' => 60],
-
-            ['email', 'trim'],
-            ['email', 'required', 'except' => 'delete'],
-            ['email', 'email'],
-            ['email', 'string', 'max' => 128],
+        $r = ArrayHelper::merge(
             [
-                'email',
-                'unique',
-                'targetClass' => '\dynx\models\User',
-                'message' => self::t('arUser', 'This email address has already been taken')
+                ['name', 'trim'],
+                ['name', 'required'],
+                ['name', 'string', 'min' => 2, 'max' => 60],
+
+                ['email', 'trim'],
+                ['email', 'required', 'except' => 'delete'],
+                ['email', 'email'],
+                ['email', 'string', 'max' => 128],
+                [
+                    'email',
+                    'unique',
+                    'targetClass' => '\dynx\models\User',
+                    'message' => self::t('dynx/ar', 'This email address has already been taken')
+                ],
+                ['pin', 'validatePin', 'on' => 'setpin'],
+                ['pin', 'required', 'on' => ['setpin']],
+
+                ['password', 'encryptPassword', 'on' => ['settings', 'update']],
+                ['password', 'validatePassword', 'on' => ['settings', 'delete']],
+
+                ['status', 'required', 'on' => ['create', 'update']],
+                ['status', 'default', 'value' => self::STATUS_PENDING],
+                ['status', 'in', 'range' => [self::STATUS_PENDING, self::STATUS_ACTIVE, self::STATUS_INACTIVE, self::STATUS_VALIDATED, self::STATUS_BANNED, self::STATUS_REMOVED]],
+
+                [['singleRole', 'roles', 'password_hash'], 'safe']
             ],
-
-            ['password', 'required', 'on' => ['create']],
-            ['password', 'encryptPassword', 'on' => ['create', 'update']],
-            ['password', 'validatePassword', 'on' => ['settings', 'delete']],
-
-            ['status', 'default', 'value' => self::STATUS_PENDING],
-            ['status', 'in', 'range' => [self::STATUS_PENDING, self::STATUS_ACTIVE, self::STATUS_INACTIVE, self::STATUS_VALIDATED, self::STATUS_BANNED, self::STATUS_REMOVED]],
-            ['status', 'required', 'on' => ['create', 'update']],
-
-            [['singleRole', 'roles','password_hash'], 'safe']
-        ], 
-     //   $this->captchaRules(), 
-    //    $this->passwordRules()
-    []
-    );
+            []
+        );
         return $r;
     }
 
@@ -132,10 +131,11 @@ class User extends DyActiveRecord implements IdentityInterface
     /**
      * {@inheritdoc}
      * IdentityInterface
+     *  @return User|null
      */
     public static function findIdentity($id)
     {
-        return static::findOne(['id' => $id, 'status' => self::STATUS_ACTIVE]);
+        return static::findOne(['id' => $id]);
     }
 
     /**
@@ -145,10 +145,10 @@ class User extends DyActiveRecord implements IdentityInterface
      */
     public static function findIdentityByAccessToken($token, $type = null)
     {
-        return 
-        static::find(['token' => $token])
-        ->andWhere(["<",'status',self::STATUS_BANNED])
-        ->one();
+        return
+            static::find(['token' => $token])
+            ->andWhere(["<", 'status', self::STATUS_BANNED])
+            ->one();
     }
     /**
      * @param $email
@@ -157,10 +157,10 @@ class User extends DyActiveRecord implements IdentityInterface
      */
     public static function findByEmail($email, $status = self::STATUS_BANNED)
     {
-        return 
-        static::find(['email' => $email])
-        ->andWhere(["<=",'status',$status])
-        ->one();
+        Yii::debug('User find by email: ' . $email);
+
+        return
+            static::findOne(['email' => trim($email)]);;
     }
 
     /**
@@ -198,7 +198,23 @@ class User extends DyActiveRecord implements IdentityInterface
     public function validatePassword($attribute, $params)
     {
         if (! $this->isPasswordValid($this->$attribute)) {
-            $this->addError($attribute, self::t('model','Incorrect password'));
+            $this->addError($attribute, Yii::t('dynx/ar', 'Incorrect password'));
+        }
+    }
+    /**
+     * Validates the pin.
+     * This method serves as the inline validation for pin code.
+     *
+     * @param string $attribute the attribute currently being validated
+     * @param array $params the additional name-value pairs given in the rule
+     */
+    public function validatePin($attribute, $params)
+    {
+        if (!$this->hasErrors()) {
+
+            if ($this->pin != $this->getOldAttribute('pin')) {
+                $this->addError($attribute, Yii::t('dynx/ar', 'Pin is not valid.'));
+            }
         }
     }
 
@@ -223,7 +239,7 @@ class User extends DyActiveRecord implements IdentityInterface
      * @param string $status
      * @return static|null
      */
-    public static function findByToken($token, $status = self::STATUS_ACTIVE)
+    public static function findByToken($token)
     {
         if (empty($token)) return null;
 
@@ -232,7 +248,7 @@ class User extends DyActiveRecord implements IdentityInterface
 
         return static::findOne([
             'token' => $token,
-            'status' => $status,
+            //   'status' => $status,
         ]);
     }
 
@@ -241,7 +257,8 @@ class User extends DyActiveRecord implements IdentityInterface
      */
     public function generateToken()
     {
-        $expired = time() + Yii::$app->controller->module->tokenExpired;
+        $module = Module::getInstance();
+        $expired = time() + $module->tokenExpired;
         $this->token = Yii::$app->security->generateRandomString() . '_' . $expired;
     }
 
@@ -259,6 +276,8 @@ class User extends DyActiveRecord implements IdentityInterface
      */
     public function isPasswordValid($password)
     {
+        Yii::debug("Password: $password", 'UserManagement');
+        if (!$this->password_hash) return false;
         return Yii::$app->security->validatePassword($password, $this->password_hash);
     }
 
@@ -287,53 +306,7 @@ class User extends DyActiveRecord implements IdentityInterface
         $this->roles = empty($role) ? [] : [$role];
     }
 
-    /**
-     * @param $subject
-     * @param $view
-     * @param array $options
-     * @return bool
-     */
-    public function sendEmail($subject, $view, $options = [])
-    {
-        $mailView = [
-            'html' => "$view-html",
-            'text' => "$view-text",
-        ];
-        $from = Yii::$app->params['supportEmail'] ?? Yii::$app->params['adminEmail'];
-        $options['user'] = $this;
 
-        $mailer = Yii::$app->mailer;
-        foreach (Yii::$app->controller->module->mailOptions as $key => $value) {
-            $mailer->$key = $value;
-        }
-        return $mailer
-            ->compose($mailView, $options)
-            ->setFrom([$from => Yii::$app->name . ' robot'])
-            ->setTo($this->email)
-            ->setSubject($subject)
-            ->send();
-    }
-
-    /**
-     * @param $subject
-     * @param $view
-     * @param array $options
-     * @param $linkAction string - the action part in the link; if null, $view is taken
-     * @return bool
-     * @throws \yii\base\Exception
-     */
-    public function sendTokenEmail($subject, $view, $options = [], $linkAction = null)
-    {
-        if (is_null($this->token)) {
-            throw new InvalidCallException('User token is not set.');
-        }
-        if (is_null($linkAction)) $linkAction = $view;
-        $module = Yii::$app->controller->module;
-
-        $options['link'] = Yii::$app->urlManager->createAbsoluteUrl([$module->id . '/default/' . $linkAction, 'token' => $this->token]);
-
-        return $this->sendEmail($subject, $view, $options);
-    }
 
     /**
      * User is never removed from database.
@@ -355,7 +328,7 @@ class User extends DyActiveRecord implements IdentityInterface
         $this->name = 'nn-' . $unique;
         $this->auth_key = null;
         $this->password_hash = null;
-        $this->pin=null;
+        $this->pin = null;
 
         /*  Some SQL servers, like MS SQL Server, are not compatible with ANSI standards, and don't allow multiple NULL-values
             in UNIQUE records. Therefore email gets a random value, conforming to the email-format.
@@ -370,7 +343,7 @@ class User extends DyActiveRecord implements IdentityInterface
         $auth = Yii::$app->authManager;
         $auth->revokeAll($this->id);    // revoke all roles
 
-        $prClass = null;;//Module::getInstance()->profileClass;
+        $prClass = null;; //Module::getInstance()->profileClass;
         if ($prClass) {    // delete profile, if any
             /* @var $prClass yii\db\BaseActiveRecord */
             /* @var $profile yii\db\BaseActiveRecord */
@@ -394,6 +367,9 @@ class User extends DyActiveRecord implements IdentityInterface
             if (!$this->lang) {
                 $this->lang = Yii::$app->language;
             }
+            if (!$this->roles) $this->roles = ['0_GUEST'];
+            $this->generateToken();
+            $this->generatePin();
         }
         if ($this->status == self::STATUS_REMOVED && $this->isAttributeChanged('status')) {
             $this->deleted_at = new Expression('NOW()');
@@ -411,47 +387,30 @@ class User extends DyActiveRecord implements IdentityInterface
         if ($insert) {
         }
         parent::afterSave($insert, $changedAttributes);
-/*
+
         $auth = Yii::$app->authManager;
         $auth->revokeAll($this->id);    // revoke old roles
         foreach ($this->roles as $roleName) {
             $role = $auth->getRole($roleName);
             $auth->assign($role, $this->id);    // assign new roles
         }
-
+        /*
         if ($insert) {
             $this->createProfile();
         }
   */
-        }
-
-         /**
-     * @param $subject
-     * @param $view
-     * @param array $options
-     * @return bool
-     */
-    public function sendSysEmail( $view, $options = [])
+    }
+    public function setEmailOptions()
     {
-       $subject=""; 
-        $mailView = [
-            'html' => "$view-html",
-            'text' => "$view-text",
-        ];
-        $from = Yii::$app->params['supportEmail'] ?? Yii::$app->params['adminEmail'];
-        $options['user'] = $this;
 
-        $mailer = Yii::$app->mailer;
-        foreach (Yii::$app->controller->module->mailOptions as $key => $value)  {
-            $mailer->$key = $value;
-        }
-        return $mailer
-            ->compose($mailView, $options)
-            ->setFrom([$from => Yii::$app->name . ' robot'])
-            ->setTo($this->email)
-            ->setSubject($subject)
-            ->send();
-    }   
+        $module = Module::getInstance();
+        $options['user'] = $this;
+        $options['tokenlink'] = Yii::$app->urlManager->createAbsoluteUrl([$module->id . '/default/activate_pin', 'token' => $this->token]);
+        $options['pinHtmlCode'] = $this->pinHtmlCode;
+
+        return $options;
+    }
+
 
     /**
      *
@@ -459,7 +418,6 @@ class User extends DyActiveRecord implements IdentityInterface
     public function afterFind()
     {
         parent::afterFind();
-        $this->pin=$this->generatePin();
         /* @var $auth yii\rbac\BaseManager */
         $auth = Yii::$app->authManager;
         $userRoles = $auth->getRolesByUser($this->id);  // yii\rbacRole[]
