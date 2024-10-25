@@ -1,0 +1,58 @@
+#pinblock {
+    display: block;
+    text-align: center;
+    margin: 10px auto;
+    border: 1px solid #eaeaea;
+    padding: 20px 0px;
+    border-radius: 5px;
+    background: #f9f9f9;
+}
+
+#pinblock .pinbox {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    padding: 5px;
+    text-align: center;
+   
+    border: 1px solid #ccc;
+    margin-right: 5px;
+    font-size: 1.2em;
+}
+
+#pinblock .pinbox.grey {
+    background: #56728d;
+    color: #fff;
+    border-color: #56728d;
+    border-radius: 5px;
+}
+#pinblock .pinbox.separator {
+    border: none;
+    width:20px;
+}
+
+#pinblock .pinbox.input {
+    padding: 0;
+}
+
+#pinblock .pinbox input {
+    border: none;
+    font-size: 1.2em;
+    width: 100%;
+    color: #000;
+
+    text-align: center;
+}
+#pinblock .invalid-feedback{
+    display:block;
+    margin: -10px 0 20px 0;
+    font-size: 1.2em;
+}
+#pinblock input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#pinblock input[type=number] {
+  -appearance: textfield;
+}
